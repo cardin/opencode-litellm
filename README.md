@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/cardin/opencode2-litellm/main/assets/logo.svg" alt="opencode-litellm logo" width="128" height="128" />
+<img src="https://raw.githubusercontent.com/cardin/opencode-litellm/main/assets/logo.svg" alt="opencode-litellm logo" width="128" height="128" />
 
 # opencode-litellm
 
@@ -11,9 +11,9 @@
 [![Works with OpenCode](https://img.shields.io/badge/works%20with-OpenCode-7C5CFF?style=flat-square)](https://opencode.ai)
 [![Powered by LiteLLM](https://img.shields.io/badge/powered%20by-LiteLLM-22D3EE?style=flat-square)](https://github.com/BerriAI/litellm)
 
-[![npm version](https://img.shields.io/npm/v/%40cardin%2Fopencode-plugin-litellm.svg?style=flat-square&color=cb3837&logo=npm)](https://www.npmjs.com/package/opencode2-litellm)
-[![npm downloads](https://img.shields.io/npm/dm/%40cardin%2Fopencode-plugin-litellm.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/opencode2-litellm)
-[![CI](https://img.shields.io/github/actions/workflow/status/cardin/opencode2-litellm/ci.yml?style=flat-square&label=CI&logo=github)](https://github.com/cardin/opencode2-litellm/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/%40cardinal4%2Fopencode-plugin-litellm.svg?style=flat-square&color=cb3837&logo=npm)](https://www.npmjs.com/package/@cardinal4/opencode-plugin-litellm)
+[![npm downloads](https://img.shields.io/npm/dm/%40cardinal4%2Fopencode-plugin-litellm.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/@cardinal4/opencode-plugin-litellm)
+[![CI](https://img.shields.io/github/actions/workflow/status/cardin/opencode-litellm/ci.yml?style=flat-square&label=CI&logo=github)](https://github.com/cardin/opencode-litellm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white)](./tsconfig.json)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](./CONTRIBUTING.md)
@@ -21,13 +21,13 @@
 Auto-detect a running LiteLLM proxy, pull every model from `/v1/models`, and register them in OpenCode.
 **No model lists to hand-maintain. No restart loops. No surprises.**
 
-<img src="https://raw.githubusercontent.com/cardin/opencode2-litellm/main/assets/architecture.svg" alt="How opencode-litellm discovers LiteLLM models and registers them through an OpenCode provider transform" width="100%" />
+<img src="https://raw.githubusercontent.com/cardin/opencode-litellm/main/assets/architecture.svg" alt="How opencode-litellm discovers LiteLLM models and registers them through an OpenCode provider transform" width="100%" />
 
 [Quickstart](#-quickstart) · [Configuration](#%EF%B8%8F-configuration) · [How it works](#-how-it-works) · [FAQ](#-faq) · [Contributing](./CONTRIBUTING.md)
 
 </div>
 
-> **npm package:** `opencode2-litellm` &nbsp;·&nbsp; **GitHub repo:** `cardin/opencode2-litellm`
+> **npm package:** `@cardinal4/opencode-plugin-litellm` &nbsp;·&nbsp; **GitHub repo:** `cardin/opencode-litellm`
 
 ---
 
@@ -45,7 +45,7 @@ Maintaining a `models` block in `opencode.json` for every model your LiteLLM pro
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "opencode2-litellm@latest",
+      "package": "@cardinal4/opencode-plugin-litellm@latest",
       "options": {
         "baseURL": "http://localhost:4000/v1"
       }
@@ -94,7 +94,7 @@ Point at your LiteLLM proxy — the plugin discovers all models automatically:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "opencode2-litellm@latest",
+      "package": "@cardinal4/opencode-plugin-litellm@latest",
       "options": {
         "baseURL": "http://localhost:4000/v1"
       }
@@ -112,7 +112,7 @@ You **do not need to list any models** — the plugin still discovers them from 
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "opencode2-litellm@latest",
+      "package": "@cardinal4/opencode-plugin-litellm@latest",
       "options": {
         "baseURL": "http://litellm.internal.example.com/v1",
         "apiKey": "{env:LITELLM_API_KEY}"
@@ -160,7 +160,7 @@ If you want to rename a model in the picker or otherwise hand-curate metadata, a
 {
   "plugins": [
     {
-      "package": "opencode2-litellm@latest",
+      "package": "@cardinal4/opencode-plugin-litellm@latest",
       "options": {
         "baseURL": "http://litellm.internal.example.com/v1",
         "apiKey": "{env:LITELLM_API_KEY}"
@@ -232,7 +232,7 @@ If your LiteLLM proxy is behind Cloudflare Access or another gateway that requir
 {
   "plugins": [
     {
-      "package": "opencode2-litellm@latest",
+      "package": "@cardinal4/opencode-plugin-litellm@latest",
       "options": {
         "baseURL": "https://litellm.internal.example.com/v1",
         "apiKey": "{env:LITELLM_API_KEY}",
@@ -256,7 +256,7 @@ If your LiteLLM catalog mixes naming conventions from different teams or environ
 {
   "plugins": [
     {
-      "package": "opencode2-litellm@latest",
+      "package": "@cardinal4/opencode-plugin-litellm@latest",
       "options": {
         "providers": {
           "litellm": {
@@ -290,7 +290,7 @@ Model classification (tool-call badge, attachments, reasoning, input modalities)
 {
   "plugins": [
     {
-      "package": "opencode2-litellm@latest",
+      "package": "@cardinal4/opencode-plugin-litellm@latest",
       "options": {
         "baseURL": "http://localhost:4000/v1",
         "modelCapabilities": {
@@ -421,7 +421,7 @@ Cloudflare Access intercepts requests before they reach LiteLLM, so a plain `Aut
 {
   "plugins": [
     {
-      "package": "opencode2-litellm@latest",
+      "package": "@cardinal4/opencode-plugin-litellm@latest",
       "options": {
         "baseURL": "https://litellm.your-company.com/v1",
         "headers": {
@@ -451,7 +451,7 @@ If your model id doesn't look like a reasoning model to LiteLLM (e.g. you rename
 ## 🛠️ Development
 
 ```bash
-git clone https://github.com/cardin/opencode2-litellm.git
+git clone https://github.com/cardin/opencode-litellm.git
 cd opencode-litellm
 npm install
 npm run typecheck
@@ -483,7 +483,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full contributor workflow.
 - [ ] Optional cost/latency overlay using LiteLLM's `/spend` and `/health` endpoints
 - [ ] V2 session-context hook for injecting LiteLLM routing tags / fallbacks
 
-Have an idea? [Open an issue](https://github.com/cardin/opencode2-litellm/issues/new).
+Have an idea? [Open an issue](https://github.com/cardin/opencode-litellm/issues/new).
 
 ## 🙏 Acknowledgements
 
@@ -499,6 +499,6 @@ Built on top of [LiteLLM](https://github.com/BerriAI/litellm) by the [BerriAI](h
 
 <div align="center">
 
-If this project saved you time, consider giving it a ⭐ on [GitHub](https://github.com/cardin/opencode2-litellm).
+If this project saved you time, consider giving it a ⭐ on [GitHub](https://github.com/cardin/opencode-litellm).
 
 </div>

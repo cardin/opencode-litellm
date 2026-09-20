@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "opencode2-litellm",
+  "name": "@cardinal4/opencode-plugin-litellm",
   "version": "2.0.0",
   "description": "OpenCode plugin for LiteLLM proxy support with auto-detection and dynamic model discovery",
   "type": "module",
@@ -29,12 +29,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cardin/opencode2-litellm.git"
+    "url": "git+https://github.com/cardin/opencode-litellm.git"
   },
   "bugs": {
-    "url": "https://github.com/cardin/opencode2-litellm/issues"
+    "url": "https://github.com/cardin/opencode-litellm/issues"
   },
-  "homepage": "https://github.com/cardin/opencode2-litellm#readme",
+  "homepage": "https://github.com/cardin/opencode-litellm#readme",
   "publishConfig": {
     "access": "public",
     "provenance": true
