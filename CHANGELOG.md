@@ -1,4 +1,4 @@
-# Unreleased
+# [2.0.0](https://github.com/cardin/opencode2-litellm/compare/v1.2.0...v2.0.0) (2026-09-20)
 
 ### Breaking Changes
 

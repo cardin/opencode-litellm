@@ -14,7 +14,7 @@ Thanks for your interest! This project is small, scoped, and aims to stay that w
 Requires Node.js ≥ 20 (or Bun ≥ 1.0).
 
 ```bash
-git clone https://github.com/yuseferi/opencode-litellm.git
+git clone https://github.com/cardin/opencode2-litellm.git
 cd opencode-litellm
 npm install
 npm run typecheck
@@ -28,7 +28,7 @@ npm test
 npm link
 
 # In your OpenCode workspace
-npm link opencode-plugin-litellm
+npm link opencode2-litellm
 # add it to opencode.json plugins, then:
 opencode
 ```
