@@ -1,3 +1,12 @@
+# Unreleased
+
+### Breaking Changes
+
+* Port the plugin implementation to OpenCode 2's `@opencode/plugin` API. The
+  package now default-exports a `Plugin.define` entrypoint, registers discovered
+  models through provider transforms, and reloads the live catalog after a
+  background refresh. OpenCode 1 is no longer supported.
+
 # [1.2.0](https://github.com/yuseferi/opencode-litellm/compare/v1.1.0...v1.2.0) (2026-09-13)
 
 

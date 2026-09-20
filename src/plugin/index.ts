@@ -1,4 +1,4 @@
-import type { Plugin, PluginInput } from '@opencode-ai/plugin'
+import { Model, Plugin, Provider } from '@opencode/plugin'
 import {
   autoDetectLiteLLM,
   checkLiteLLMHealth,
@@ -12,7 +12,6 @@ import {
   categorizeModel,
 } from '../utils/format-model-name'
 import type { LiteLLMModel, LiteLLMModelInfo } from '../types'
-import { getOpenCodeStoredApiKey } from '../utils/opencode-auth'
 import {
   buildCacheKey,
   readModelCache,
@@ -35,58 +34,38 @@ const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 
 type LogLevel = 'info' | 'warn' | 'error' | 'debug'
 
-let logClient: PluginInput['client'] | null = null
-
-function initLogging(client: PluginInput['client']): void {
-  logClient = client
-}
-
 /**
- * Route plugin logs through OpenCode's log API instead of stdout.
- * console.* writes straight into the same terminal the OpenCode TUI
- * renders in, corrupting the interface on every background refresh
- * (issue #15); client.app.log lands in OpenCode's log files instead.
+ * V2 plugins run in the OpenCode service, so console output is captured by
+ * the service logger rather than being written into the terminal UI.
  */
 function log(level: LogLevel, message: string): void {
-  if (logClient) {
-    void logClient.app
-      .log({ body: { service: 'opencode-litellm', level, message } })
-      .catch(() => {})
-    return
-  }
-  // No client wired up (unit tests, unusual embedders) — fall back to
-  // the console rather than silently dropping diagnostics.
-  if (level === 'info' || level === 'debug') console.log(message)
-  else console.warn(message)
+  if (level === 'error') console.error(message)
+  else if (level === 'warn') console.warn(message)
+  else console.log(message)
 }
 
-/**
- * OpenCode invokes the `config` hook several times per run with a
- * cumulative config object. Track which model ids we already injected
- * per provider (keyed by `providerId@baseURL`) so repeat invocations
- * can return early instead of re-querying the proxy.
- */
-const injectedModelIds = new Map<string, Set<string>>()
-
-/**
- * Per-provider fetch context captured during the `config` hook, so the
- * `event` hook can revalidate the cache in the background (SWR) without
- * re-deriving auth/headers. Keyed by `providerId@baseURL` — the same
- * key as the on-disk cache — so providers sharing a proxy keep
- * independent refresh contexts.
- */
-interface RefreshContext {
+/** Per-provider discovery state captured by the V2 provider transform. */
+interface ProviderState {
   baseURL: string
   apiKey?: string
   customHeaders?: Record<string, string>
   filters: ModelFilters
   capabilities: ModelCapabilities
   providerId: string
+  name: string
+  package: string
+  models: Record<string, Model.Info>
 }
-const refreshContexts = new Map<string, RefreshContext>()
 
-/** Cache keys with an in-flight background refresh, to avoid pile-ups. */
-const refreshInFlight = new Set<string>()
+interface ProviderCandidate {
+  id: string
+  provider?: Provider.Info
+  options: Record<string, unknown>
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
 
 /**
  * Race a promise against a timeout, resolving to `null` if the timeout
@@ -202,74 +181,68 @@ function enrichModel(
 const USD_PER_TOKEN_TO_PER_MILLION = 1_000_000
 
 /**
- * Convert a discovered LiteLLM model into an OpenCode config-level
- * model entry (the shape used in `provider.*.models` inside
- * `opencode.json`). Returns `null` for non-chat models (embedding,
+ * Convert a discovered LiteLLM model into an OpenCode V2 model definition.
+ * Returns `null` for non-chat models (embedding,
  * image, audio) — they can't be used as primary chat models and would
  * clutter the picker.
  */
-function toConfigModel(
+function toModelInfo(
   model: LiteLLMModel,
+  providerId: string,
   info?: LiteLLMModelInfo,
-): Record<string, unknown> | null {
+): Model.Info | null {
   const type = categorizeModel(model)
   if (type === 'embedding' || type === 'image' || type === 'audio') {
     return null
   }
-  const entry: Record<string, unknown> = {
-    name: formatModelName(model),
-  }
+  const providerID = Provider.ID.make(providerId)
+  const id = Model.ID.make(model.id)
+  const defaults = Model.Info.default(providerID, id)
   // Some deployments only report the OpenAI-style `max_tokens` total;
   // use it as the context limit when `max_input_tokens` is absent.
   const contextLimit = model.max_input_tokens ?? model.max_tokens
-  if (contextLimit || model.max_output_tokens) {
-    entry.limit = {
-      context: contextLimit ?? 0,
-      output: model.max_output_tokens ?? 0,
-    }
-  }
-  if (model.supports_function_calling) {
-    entry.tool_call = true
-  }
-  if (model.supports_reasoning) {
-    entry.reasoning = true
-  }
-  if (model.supports_vision) {
-    entry.attachment = true
+  const limit = {
+    ...defaults.limit,
+    context: contextLimit ?? defaults.limit.context,
+    output: model.max_output_tokens ?? defaults.limit.output,
   }
   // Only emit `cost` when LiteLLM actually reported a price. Omitting
   // it (rather than defaulting to 0) lets OpenCode/models.dev fall back
   // to their own default instead of us asserting "this model is free"
   // for something LiteLLM simply has no price anchor for (e.g. rerank).
+  const cost: Model.Cost[] = []
   if (model.input_cost_per_token != null || model.output_cost_per_token != null) {
-    const cost: Record<string, number> = {
+    cost.push({
       input: (model.input_cost_per_token ?? 0) * USD_PER_TOKEN_TO_PER_MILLION,
       output: (model.output_cost_per_token ?? 0) * USD_PER_TOKEN_TO_PER_MILLION,
-    }
-    if (model.cache_read_input_token_cost != null) {
-      cost.cache_read = model.cache_read_input_token_cost * USD_PER_TOKEN_TO_PER_MILLION
-    }
-    if (model.cache_creation_input_token_cost != null) {
-      cost.cache_write = model.cache_creation_input_token_cost * USD_PER_TOKEN_TO_PER_MILLION
-    }
-    entry.cost = cost
+      cache: {
+        read: (model.cache_read_input_token_cost ?? 0) * USD_PER_TOKEN_TO_PER_MILLION,
+        write: (model.cache_creation_input_token_cost ?? 0) * USD_PER_TOKEN_TO_PER_MILLION,
+      },
+    } as Model.Cost)
   }
   const input: Array<'text' | 'image' | 'pdf' | 'audio'> = ['text']
   if (model.supports_vision) input.push('image')
   if (model.supports_pdf_input) input.push('pdf')
   if (model.supports_audio_input) input.push('audio')
-  if (input.length > 1) {
-    entry.modalities = { input, output: ['text'] }
+  const variants: Model.Variant[] = (info?.supports_reasoning_efforts ?? []).map(
+    (effort) => ({
+      id: Model.VariantID.make(effort),
+      settings: { reasoningEffort: effort },
+    }),
+  )
+  return {
+    ...defaults,
+    name: formatModelName(model),
+    limit,
+    capabilities: {
+      tools: model.supports_function_calling === true,
+      input,
+      output: ['text'],
+    },
+    cost,
+    variants,
   }
-  entry.variants = info?.supports_reasoning_efforts?.length
-    ? Object.fromEntries(
-        info.supports_reasoning_efforts.map((effort) => [
-          effort,
-          { reasoningEffort: effort },
-        ]),
-      )
-    : undefined
-  return entry
 }
 
 /**
@@ -292,7 +265,7 @@ async function discoverModels(
   providerId: string,
   filters: ModelFilters = {},
   capabilities: ModelCapabilities = {},
-): Promise<Record<string, unknown> | null> {
+): Promise<Record<string, Model.Info> | null> {
   if (!(await checkLiteLLMHealth(baseURL, apiKey, customHeaders))) {
     log(
       'warn',
@@ -341,7 +314,7 @@ async function discoverModels(
     return null
   }
 
-  const built: Record<string, unknown> = {}
+  const built: Record<string, Model.Info> = {}
   let skipped = 0
   let wildcards = 0
   let filtered = 0
@@ -363,7 +336,11 @@ async function discoverModels(
     }
     const info = infoByName?.get(model.id)
     if (infoByName && !info) unmatched.push(model.id)
-    const entry = toConfigModel(enrichModel(model, info, capabilities[model.id]), info)
+    const entry = toModelInfo(
+      enrichModel(model, info, capabilities[model.id]),
+      providerId,
+      info,
+    )
     if (!entry) {
       skipped++
       continue
@@ -404,37 +381,16 @@ async function discoverModels(
 }
 
 /**
- * Merge freshly built model entries into a provider's `models` map
- * without clobbering user-curated (or previously injected) entries.
- * Returns the ids actually added by this call.
+ * Revalidate a provider's model cache off the critical path (SWR), then
+ * replay the V2 provider transform so the live model picker sees the refresh.
  */
-function mergeModels(
-  models: Record<string, unknown>,
-  built: Record<string, unknown>,
-): string[] {
-  const added: string[] = []
-  for (const [id, entry] of Object.entries(built)) {
-    if (Object.hasOwn(models, id)) continue
-    models[id] = entry
-    added.push(id)
-  }
-  // Remove the seed placeholder if real models were merged in.
-  if (Object.hasOwn(models, '_') && Object.keys(models).length > 1) {
-    delete models['_']
-  }
-  return added
-}
-
-/**
- * Revalidate a provider's model cache off the critical path (SWR). The
- * refreshed entries land in the on-disk cache and surface on the next
- * OpenCode start — OpenCode only reads provider config at startup, so
- * we can't mutate the live picker here.
- */
-async function backgroundRefresh(cacheKey: string): Promise<void> {
+async function backgroundRefresh(
+  cacheKey: string,
+  state: ProviderState,
+  refreshInFlight: Set<string>,
+  reload: () => Promise<void>,
+): Promise<void> {
   if (refreshInFlight.has(cacheKey)) return
-  const ctx = refreshContexts.get(cacheKey)
-  if (!ctx) return
   // Skip if the cache was refreshed recently — a burst of new sessions
   // shouldn't hammer the proxy with health checks and discovery calls.
   const savedAt = readModelCacheSavedAt(cacheKey)
@@ -445,20 +401,22 @@ async function backgroundRefresh(cacheKey: string): Promise<void> {
   try {
     const built = await withTimeout(
       discoverModels(
-        ctx.baseURL,
-        ctx.apiKey,
-        ctx.customHeaders,
-        ctx.providerId,
-        ctx.filters,
-        ctx.capabilities,
+        state.baseURL,
+        state.apiKey,
+        state.customHeaders,
+        state.providerId,
+        state.filters,
+        state.capabilities,
       ),
       DISCOVERY_TIMEOUT_MS,
     )
     if (built && Object.keys(built).length > 0) {
+      state.models = built
       writeModelCache(cacheKey, built)
+      await reload()
       log(
         'info',
-        `[opencode-litellm] Background-refreshed model cache for ${ctx.baseURL} (${Object.keys(built).length} models)`,
+        `[opencode-litellm] Background-refreshed models for ${state.baseURL} (${Object.keys(built).length} models)`,
       )
     }
   } catch {
@@ -471,213 +429,256 @@ async function backgroundRefresh(cacheKey: string): Promise<void> {
 /**
  * LiteLLM Plugin for OpenCode.
  *
- * Uses the `config` hook to discover models from a LiteLLM proxy and
- * inject them into the provider's `models` map at startup. This is the
- * only reliable way to dynamically populate a provider — the
- * `provider.models` hook is not called by OpenCode for custom providers.
+ * Uses the OpenCode V2 provider transform API to discover models from a
+ * LiteLLM proxy and add them to the provider catalog.
  *
- * Configure the provider in your `opencode.json`:
+ * Configure the plugin in your `opencode.json`:
  *
  * {
- *   "plugin": ["opencode-plugin-litellm@latest"],
- *   "provider": {
- *     "litellm": {
- *       "npm": "@ai-sdk/openai-compatible",
- *       "name": "LiteLLM (proxy)",
+ *   "plugins": [
+ *     {
+ *       "package": "opencode-plugin-litellm@latest",
  *       "options": {
  *         "baseURL": "http://localhost:4000/v1",
  *         "apiKey": "{env:LITELLM_API_KEY}"
  *       }
  *     }
- *   }
+ *   ]
  * }
  */
-export const LiteLLMPlugin: Plugin = async (input: PluginInput) => {
-  initLogging(input.client)
-  return {
-    config: async (config: any) => {
-      // Ensure the provider entry exists
-      if (!config.provider) config.provider = {}
+export const LiteLLMPlugin = Plugin.define({
+  id: 'litellm',
+  async setup(ctx) {
+    log('info', `[opencode-litellm] Loading for ${ctx.location.directory}`)
+    // A short-lived transform gives setup access to configured providers,
+    // including inactive providers that the public list endpoint omits.
+    let configuredProviders: Provider.Info[] = []
+    const inspection = await ctx.provider.transform((editor) => {
+      configuredProviders = editor.list().map((record) => record.provider)
+    })
+    await inspection.dispose()
 
-      // Find all matching LiteLLM providers
-      const providerIds = Object.keys(config.provider)
-      const liteLLMProviders: Array<{ id: string; provider: Record<string, unknown> }> = []
+    const matches = configuredProviders.filter((provider) =>
+      isLiteLLMProvider(provider.id, provider.settings ?? {}),
+    )
+    const candidates: ProviderCandidate[] = []
+    const optionProviders = isRecord(ctx.options.providers)
+      ? ctx.options.providers
+      : undefined
 
-      for (const id of providerIds) {
-        const provider = config.provider[id]
-        if (provider && typeof provider === 'object') {
-          const options = (provider.options ?? {}) as Record<string, unknown>
-          if (isLiteLLMProvider(id, options)) {
-            liteLLMProviders.push({ id, provider })
-          }
-        }
-      }
-
-      // If no providers are matched (e.g., zero-config auto-detection),
-      // fall back to default 'litellm' provider to ensure backwards compatibility.
-      if (liteLLMProviders.length === 0) {
-        const id = CHAT_PROVIDER_ID
-        let provider = config.provider[id] as Record<string, unknown> | undefined
-        if (!provider) {
-          provider = {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'LiteLLM (proxy)',
-            options: {},
-            models: {},
-          }
-        }
-        liteLLMProviders.push({ id, provider })
-      }
-
-      // Process each matched provider
-      for (const { id: providerId, provider } of liteLLMProviders) {
-        const options = (provider.options ?? {}) as Record<string, unknown>
-        const configuredBase =
-          typeof options.baseURL === 'string' ? options.baseURL : undefined
-        const configuredKey =
-          typeof options.apiKey === 'string' && options.apiKey
-            ? options.apiKey
-            : undefined
-        const envKey =
-          process.env.LITELLM_API_KEY || process.env.LITELLM_MASTER_KEY || undefined
-        /*
-        Falls back to the key OpenCode itself stored for this provider id via
-        '/connect' (~/.local/share/opencode/auth.json). For a custom provider
-        like this one there is no automatic auth.json injection (see below), so
-        the plugin reads the stored key here and applies it to both its own
-        discovery fetches and the completion-time provider options. Without it,
-        a key-only proxy would fail discovery even though chat works.
-        */
-        const storedKey = await getOpenCodeStoredApiKey(providerId)
-        const apiKey = configuredKey ?? envKey ?? storedKey
-        const customHeaders = readCustomHeaders(options)
-        const filters = readModelFilters(options)
-        const capabilities = parseModelCapabilities(options.modelCapabilities)
-
-        // Resolve base URL
-        let baseURL: string | null = null
-        if (configuredBase) {
-          baseURL = normalizeBaseURL(configuredBase)
-        } else {
-          baseURL = await autoDetectLiteLLM(apiKey, customHeaders)
-        }
-
-        if (!baseURL) {
-          log(
-            'warn',
-            `[opencode-litellm] No LiteLLM proxy found for provider "${providerId}". Configure options.baseURL or start LiteLLM on port 4000/8000/8080.`,
-          )
-          continue
-        }
-
-        // Initialize/Update the provider entry in config
-        if (!config.provider[providerId]) {
-          config.provider[providerId] = provider
-        }
-        const actualProvider = config.provider[providerId] as Record<string, unknown>
-
-        if (!actualProvider.npm) {
-          actualProvider.npm = '@ai-sdk/openai-compatible'
-        }
-
-        if (!actualProvider.options) {
-          actualProvider.options = {}
-        }
-        const actualOptions = actualProvider.options as Record<string, unknown>
-        if (!actualOptions.baseURL) {
-          actualOptions.baseURL = `${baseURL}/v1`
-        }
-        /*
-        For a fully custom, config-only provider like this one, OpenCode
-        builds the real completion-time AI SDK client straight from
-        `options` - there's no separate auth.json auto-injection for
-        arbitrary custom providers (that only applies to a handful of
-        models.dev-catalog providers with special-cased loaders). So the
-        `apiKey` resolved above (config > env var > OpenCode-stored
-        credential) must be written back here, or real chat completions
-        go out with no Authorization header even though discovery
-        succeeded using the same resolved key.
-        */
-        if (!actualOptions.apiKey && apiKey) {
-          actualOptions.apiKey = apiKey
-        }
-
-        if (!actualProvider.models) {
-          actualProvider.models = {}
-        }
-
-        const models = actualProvider.models as Record<string, unknown>
-
-        // Identity includes the filter/capability config: those are
-        // baked into cached entries, so changing them must start a
-        // fresh discovery instead of serving the old adjusted view.
-        const cacheKey = buildCacheKey(providerId, baseURL, filters, capabilities)
-
-        // Remember how to reach this proxy so the `event` hook can
-        // revalidate its cache in the background on new sessions.
-        refreshContexts.set(cacheKey, {
-          baseURL,
-          apiKey,
-          customHeaders,
-          filters,
-          capabilities,
-          providerId,
+    if (optionProviders) {
+      for (const [id, options] of Object.entries(optionProviders)) {
+        if (!isRecord(options)) continue
+        candidates.push({
+          id,
+          provider: matches.find((provider) => provider.id === id),
+          options,
         })
+      }
+    } else if (
+      ['baseURL', 'apiKey', 'includeModels', 'excludeModels', 'modelCapabilities'].some(
+        (key) => key in ctx.options,
+      )
+    ) {
+      const id =
+        typeof ctx.options.providerId === 'string'
+          ? ctx.options.providerId
+          : CHAT_PROVIDER_ID
+      candidates.push({
+        id,
+        provider: matches.find((provider) => provider.id === id),
+        options: { ...ctx.options },
+      })
+    }
 
-        // Repeat config-hook invocations within a run are a no-op once
-        // we've injected this provider's models.
-        const alreadyInjected = injectedModelIds.get(cacheKey)
-        if (
-          alreadyInjected &&
-          [...alreadyInjected].every((id) => Object.hasOwn(models, id))
-        ) {
-          continue
-        }
+    for (const provider of matches) {
+      if (candidates.some((candidate) => candidate.id === provider.id)) continue
+      candidates.push({ id: provider.id, provider, options: {} })
+    }
+    if (candidates.length === 0) {
+      candidates.push({ id: CHAT_PROVIDER_ID, options: {} })
+    }
+    const states = new Map<string, ProviderState>()
 
-        // SWR fast path: serve cached entries synchronously so startup
-        // isn't blocked on the network. A background refresh (see the
-        // `event` hook) keeps the cache fresh for the next launch.
-        // The cache is scoped per provider so two providers pointing at
-        // the same proxy (with different keys) don't share model lists.
-        const cached = readModelCache(cacheKey)
-        if (cached && Object.keys(cached).length > 0) {
-          const added = mergeModels(models, cached)
-          injectedModelIds.set(cacheKey, new Set(added))
-          log(
-            'info',
-            `[opencode-litellm] Loaded ${Object.keys(cached).length} models from cache for provider "${providerId}" (${baseURL}); refresh happens in the background on new sessions.`,
-          )
-          continue
-        }
+    for (const candidate of candidates) {
+      const provider = candidate.provider
+      const providerId = candidate.id
+      const settings = {
+        ...(provider?.settings ?? {}),
+        ...candidate.options,
+      } as Record<string, unknown>
+      const configuredBase =
+        typeof settings.baseURL === 'string' ? settings.baseURL : undefined
+      const configuredKey =
+        typeof settings.apiKey === 'string' && settings.apiKey
+          ? settings.apiKey
+          : undefined
+      const envKey =
+        process.env.LITELLM_API_KEY || process.env.LITELLM_MASTER_KEY || undefined
 
-        // Cold cache: do a live fetch (slow first run only), inject, and
-        // persist for subsequent startups. Capped by a timeout so a slow
-        // proxy never blocks boot.
-        const built = await withTimeout(
-          discoverModels(baseURL, apiKey, customHeaders, providerId, filters, capabilities),
+      let connectedKey: string | undefined
+      try {
+        const connection = await ctx.integration.connection.active(
+          provider?.integrationID ?? providerId,
+        )
+        const credential = connection
+          ? await ctx.integration.connection.resolve(connection)
+          : undefined
+        if (credential?.type === 'key') connectedKey = credential.key
+      } catch {
+        // A custom provider may not have an integration. Config/env auth
+        // remains fully supported in that case.
+      }
+
+      const apiKey = configuredKey ?? envKey ?? connectedKey
+      const legacyHeaders = readCustomHeaders(settings)
+      const customHeaders = {
+        ...(provider?.headers ?? {}),
+        ...(isRecord(settings.headers) ? readCustomHeaders({ customHeaders: settings.headers }) : {}),
+        ...(legacyHeaders ?? {}),
+      }
+      const discoveryHeaders =
+        Object.keys(customHeaders).length > 0 ? customHeaders : undefined
+      const filters = readModelFilters(settings)
+      const capabilities = parseModelCapabilities(settings.modelCapabilities)
+      const baseURL = configuredBase
+        ? normalizeBaseURL(configuredBase)
+        : await autoDetectLiteLLM(apiKey, discoveryHeaders)
+
+      if (!baseURL) {
+        log(
+          'warn',
+          `[opencode-litellm] No LiteLLM proxy found for provider "${providerId}". Configure plugin options.baseURL or start LiteLLM on port 4000/8000/8080.`,
+        )
+        continue
+      }
+
+      const cacheKey = buildCacheKey(providerId, baseURL, filters, capabilities)
+      const cached = readModelCache(cacheKey) as Record<string, Model.Info> | null
+      let models = cached && Object.keys(cached).length > 0 ? cached : null
+
+      if (models) {
+        log(
+          'info',
+          `[opencode-litellm] Loaded ${Object.keys(models).length} models from cache for provider "${providerId}" (${baseURL}).`,
+        )
+      } else {
+        models = await withTimeout(
+          discoverModels(
+            baseURL,
+            apiKey,
+            discoveryHeaders,
+            providerId,
+            filters,
+            capabilities,
+          ),
           DISCOVERY_TIMEOUT_MS,
         )
-        if (built && Object.keys(built).length > 0) {
-          const added = mergeModels(models, built)
-          injectedModelIds.set(cacheKey, new Set(added))
-          writeModelCache(cacheKey, built)
+        if (models && Object.keys(models).length > 0) {
+          writeModelCache(cacheKey, models)
         }
       }
-    },
-    event: async ({ event }) => {
-      // Revalidate model caches off the critical path when a new session
-      // opens. Fresh data lands in the cache and surfaces on the next
-      // OpenCode start (SWR).
-      if (event.type !== 'session.created') return
-      for (const cacheKey of refreshContexts.keys()) {
-        void backgroundRefresh(cacheKey)
-      }
-    },
-  }
-}
 
-// Re-export the responses plugin for backwards compat, but it's now a no-op.
-// The config hook approach handles all models in a single provider.
-export const LiteLLMResponsesPlugin: Plugin = async (_input: PluginInput) => {
-  return {}
-}
+      if (!models || Object.keys(models).length === 0) continue
+      states.set(cacheKey, {
+        baseURL,
+        apiKey,
+        customHeaders: discoveryHeaders,
+        filters,
+        capabilities,
+        providerId,
+        name:
+          typeof settings.name === 'string'
+            ? settings.name
+            : provider?.name ?? 'LiteLLM (proxy)',
+        package:
+          typeof settings.package === 'string'
+            ? settings.package
+            : provider?.package || '@opencode/ai/providers/openai-compatible',
+        models,
+      })
+    }
+
+    await ctx.provider.transform((editor) => {
+      for (const state of states.values()) {
+        const current = editor.get(state.providerId)
+        if (!current) {
+          const providerID = Provider.ID.make(state.providerId)
+          const info: Provider.Info = {
+            ...Provider.Info.empty(providerID),
+            name: state.name,
+            activation: 'enabled',
+            package: state.package,
+            settings: {
+              baseURL: `${state.baseURL}/v1`,
+              ...(state.apiKey ? { apiKey: state.apiKey } : {}),
+            },
+            ...(state.customHeaders ? { headers: state.customHeaders } : {}),
+          }
+          editor.add({ info, models: Object.values(state.models) })
+          continue
+        }
+
+        editor.update(state.providerId, (info) => {
+          if (!info.package) {
+            info.package = state.package
+          }
+          info.settings = {
+            ...info.settings,
+            baseURL: info.settings?.baseURL ?? `${state.baseURL}/v1`,
+            ...(info.settings?.apiKey || !state.apiKey
+              ? {}
+              : { apiKey: state.apiKey }),
+          }
+          if (state.customHeaders) {
+            info.headers = { ...info.headers, ...state.customHeaders }
+          }
+        })
+
+        // Preserve hand-curated config models. Discovered definitions only
+        // fill IDs that no earlier source or transform already supplied.
+        const existing = [...current.models.values()]
+        const existingIds = new Set(existing.map((model) => model.id))
+        const discovered = Object.values(state.models).filter(
+          (model) => !existingIds.has(model.id),
+        )
+        editor.models.set(state.providerId, [...existing, ...discovered])
+      }
+    })
+
+    const controller = new AbortController()
+    const refreshInFlight = new Set<string>()
+    void (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          if (event.type !== 'session.created') continue
+          for (const [cacheKey, state] of states) {
+            void backgroundRefresh(
+              cacheKey,
+              state,
+              refreshInFlight,
+              () => ctx.provider.reload(),
+            )
+          }
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          log(
+            'warn',
+            `[opencode-litellm] Event subscription stopped: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+      }
+    })()
+
+    return () => controller.abort()
+  },
+})
+
+// Kept as a named export for users that imported the old symbol directly.
+export const LiteLLMResponsesPlugin = Plugin.define({
+  id: 'litellm.responses',
+  setup() {},
+})
+
+export default LiteLLMPlugin

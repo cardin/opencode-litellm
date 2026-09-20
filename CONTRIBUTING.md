@@ -5,7 +5,7 @@ Thanks for your interest! This project is small, scoped, and aims to stay that w
 ## Project philosophy
 
 - **Tiny surface area.** The plugin does one thing: discover LiteLLM models and feed them to OpenCode. Features that drift from that focus belong in a sibling plugin, not in this one.
-- **Zero runtime deps** beyond `@opencode-ai/plugin`. Adding a dependency requires a strong justification.
+- **Zero runtime deps** beyond `@opencode/plugin`. Adding a dependency requires a strong justification.
 - **Strict TypeScript.** No `any` in public APIs. Internal `any` is acceptable only when the OpenCode `config` type is genuinely opaque to us.
 - **Non-blocking by default.** Anything that talks to the network must be wrapped in a timeout and must never throw out of the plugin lifecycle.
 

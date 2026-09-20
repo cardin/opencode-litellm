@@ -1,2 +1,2 @@
-export { LiteLLMPlugin, LiteLLMResponsesPlugin } from './plugin'
+export { default, LiteLLMPlugin, LiteLLMResponsesPlugin } from './plugin'
 export * from './types'
