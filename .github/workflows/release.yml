@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # needed to create the GitHub Release and push commits/tags
+      issues: write # needed to comment on issues/commits for release notifications
+      pull-requests: write # needed to comment on pull requests for release notifications
       id-token: write # for npm provenance and Trusted Publishing OIDC
     steps:
       - name: Checkout
@@ -33,9 +35,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # Runs semantic-release. Omitting NPM_TOKEN triggers the @semantic-release/npm
-      # plugin to use OIDC Trusted Publishing.
+      # Runs semantic-release. When the NPM_TOKEN secret is set the
+      # @semantic-release/npm plugin authenticates with it; when it is empty
+      # (unset secret) the plugin falls back to OIDC Trusted Publishing.
       - name: Run semantic-release
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
