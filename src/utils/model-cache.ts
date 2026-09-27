@@ -65,25 +65,28 @@ function canonicalize(value: unknown): string {
 
 /**
  * Cache identity for a provider's model view. `providerId@baseURL`
- * alone isn't enough: `includeModels`/`excludeModels` and
- * `modelCapabilities` are baked into cached entries by discovery, so a
- * config change must not reuse the old cache — it would keep serving
- * the previous adjusted view until a second restart. A fingerprint is
- * appended whenever adjustments exist (pattern order ignored); default
- * configs keep the plain key so existing caches stay warm across
- * plugin upgrades.
+ * alone isn't enough: `includeModels`/`excludeModels`,
+ * `modelCapabilities` and `formatModelNames` are baked into cached
+ * entries by discovery, so a config change must not reuse the old cache
+ * — it would keep serving the previous adjusted view until a second
+ * restart. A fingerprint is appended whenever adjustments exist
+ * (pattern order ignored); default configs keep the plain key so
+ * existing caches stay warm across plugin upgrades.
  */
 export function buildCacheKey(
   providerId: string,
   baseURL: string,
   filters: { includeModels?: string[]; excludeModels?: string[] },
   capabilities: Record<string, Record<string, boolean>>,
+  naming: { formatModelNames?: boolean } = {},
 ): string {
   const base = `${providerId}@${baseURL}`
+  const rawNames = naming.formatModelNames === false
   const hasAdjustments =
     (filters.includeModels?.length ?? 0) > 0 ||
     (filters.excludeModels?.length ?? 0) > 0 ||
-    Object.keys(capabilities).length > 0
+    Object.keys(capabilities).length > 0 ||
+    rawNames
   if (!hasAdjustments) return base
   const fingerprint = createHash('sha256')
     .update(
@@ -91,6 +94,9 @@ export function buildCacheKey(
         includeModels: filters.includeModels ? [...filters.includeModels].sort() : undefined,
         excludeModels: filters.excludeModels ? [...filters.excludeModels].sort() : undefined,
         capabilities,
+        // Omitted (not `true`) when formatting is on, so keys for
+        // configs that never touch this option are unchanged.
+        formatModelNames: rawNames ? false : undefined,
       }),
     )
     .digest('hex')

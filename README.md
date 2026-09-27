@@ -69,7 +69,7 @@ opencode
 | 🔍 **Auto-detection** | Probes `localhost:4000`, `:8000`, `:8080` and adopts the first responsive proxy. |
 | 📡 **Dynamic discovery** | Queries `/v1/models` so your OpenCode model picker always reflects your live `model_list`. |
 | ⚡ **Instant startup (SWR)** | Discovered models are cached on disk and loaded synchronously — startup never blocks on the network. A background refresh on new sessions keeps the cache fresh; entries expire after 7 days. |
-| 🏷️ **Smart formatting** | Turns `anthropic/claude-3-5-sonnet` into `Claude 3.5 Sonnet` in the picker — handles versions, sizes, quantizations, and brand-cased names like `gpt-4o`. |
+| 🏷️ **Smart formatting** | Turns `anthropic/claude-3-5-sonnet` into `Claude 3.5 Sonnet` in the picker — handles versions, sizes, quantizations, and brand-cased names like `gpt-4o`. Set `formatModelNames: false` to keep the raw LiteLLM ids instead. |
 | 🧠 **Modality-aware** | Enriches `/v1/models` entries with `/v1/model/info` (`mode`, token limits, capability flags) and hides embedding / image / audio models from the picker. |
 | 💵 **Real pricing** | Maps `input_cost_per_token` / `output_cost_per_token` (and cache read/write costs) from `/v1/model/info` into OpenCode's `cost` field, so the picker and `/cost` show what the proxy actually bills instead of `$0.00`. Models LiteLLM has no price for are left unpriced, not falsely marked free. |
 | 🧩 **Reasoning-effort variants** | When LiteLLM reports per-model effort support (`supports_low_reasoning_effort`, …), the plugin surfaces each level as a picker variant automatically. |
@@ -308,6 +308,29 @@ Model classification (tool-call badge, attachments, reasoning, input modalities)
 - Overridden flags flow into the picker exactly like natively reported ones, and the adjusted view is what gets persisted to the model cache.
 - Changing `modelCapabilities` (or `includeModels`/`excludeModels`) starts a fresh discovery on the next start — the cache is scoped by that config — so the picker reflects the new flags immediately.
 
+### Keeping raw model ids in the picker (`formatModelNames`)
+
+By default the plugin prettifies each discovered id into a display name — `anthropic/claude-3-5-sonnet` shows up as `Claude 3.5 Sonnet`. If you'd rather see your LiteLLM `model_list` aliases verbatim (for example because your team refers to models by those exact names, or the formatter mangles an internal naming scheme), turn formatting off:
+
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "@cardinal4/opencode-plugin-litellm@latest",
+      "options": {
+        "baseURL": "http://localhost:4000/v1",
+        "formatModelNames": false
+      }
+    }
+  ]
+}
+```
+
+- The display name becomes the exact model id as returned by `/v1/models` (provider prefix, version suffixes and all). Nothing else changes — ids, capability flags, pricing and filtering behave exactly as before.
+- Only a boolean `false` disables formatting; omitting the option or setting anything else keeps the default.
+- Like the other options above, `formatModelNames` is part of the cache identity, so toggling it triggers a fresh discovery on the next start instead of serving previously cached names.
+- To rename just a handful of models while keeping smart formatting for the rest, use the per-model `name` override described in [Overriding or curating individual models](#overriding-or-curating-individual-models-optional).
+
 ## 🔧 How it works
 
 ```mermaid
@@ -471,7 +494,7 @@ src/
 │   ├── model-filter.ts         # includeModels/excludeModels glob filtering
 │   └── model-capabilities.ts   # per-model capability flag overrides
 └── plugin/
-    └── index.ts                # V2 provider transform, enrichment, filtering, refresh
+    └── index.ts                # V2 provider transform, enrichment, filtering, capability overrides, naming, refresh
 
 test/                           # vitest suite for the pure logic
 ```

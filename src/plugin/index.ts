@@ -51,6 +51,7 @@ interface ProviderState {
   customHeaders?: Record<string, string>
   filters: ModelFilters
   capabilities: ModelCapabilities
+  formatModelNames: boolean
   providerId: string
   name: string
   package: string
@@ -136,6 +137,14 @@ function readModelFilters(options: Record<string, unknown>): ModelFilters {
 }
 
 /**
+ * Read the `formatModelNames` choice. Only an explicit boolean `false`
+ * disables prettifying, so a typo can't silently turn formatting off.
+ */
+function readFormatModelNames(options: Record<string, unknown>): boolean {
+  return options.formatModelNames !== false
+}
+
+/**
  * Overlay metadata onto a `/v1/models` entry in three tiers: the entry's
  * own fields win, `/v1/model/info` fills gaps (notably `mode`, which
  * `/v1/models` omits for database-defined models), and finally
@@ -185,11 +194,15 @@ const USD_PER_TOKEN_TO_PER_MILLION = 1_000_000
  * Returns `null` for non-chat models (embedding,
  * image, audio) — they can't be used as primary chat models and would
  * clutter the picker.
+ *
+ * Exported for tests: `formatModelNames` decides whether the display
+ * name is the prettified id or the raw `/v1/models` id verbatim.
  */
-function toModelInfo(
+export function toModelInfo(
   model: LiteLLMModel,
   providerId: string,
   info?: LiteLLMModelInfo,
+  formatModelNames = true,
 ): Model.Info | null {
   const type = categorizeModel(model)
   if (type === 'embedding' || type === 'image' || type === 'audio') {
@@ -233,7 +246,7 @@ function toModelInfo(
   )
   return {
     ...defaults,
-    name: formatModelName(model),
+    name: formatModelNames ? formatModelName(model) : model.id,
     limit,
     capabilities: {
       tools: model.supports_function_calling === true,
@@ -265,6 +278,7 @@ async function discoverModels(
   providerId: string,
   filters: ModelFilters = {},
   capabilities: ModelCapabilities = {},
+  formatModelNames = true,
 ): Promise<Record<string, Model.Info> | null> {
   if (!(await checkLiteLLMHealth(baseURL, apiKey, customHeaders))) {
     log(
@@ -340,6 +354,7 @@ async function discoverModels(
       enrichModel(model, info, capabilities[model.id]),
       providerId,
       info,
+      formatModelNames,
     )
     if (!entry) {
       skipped++
@@ -407,6 +422,7 @@ async function backgroundRefresh(
         state.providerId,
         state.filters,
         state.capabilities,
+        state.formatModelNames,
       ),
       DISCOVERY_TIMEOUT_MS,
     )
@@ -476,9 +492,14 @@ export const LiteLLMPlugin = Plugin.define({
         })
       }
     } else if (
-      ['baseURL', 'apiKey', 'includeModels', 'excludeModels', 'modelCapabilities'].some(
-        (key) => key in ctx.options,
-      )
+      [
+        'baseURL',
+        'apiKey',
+        'includeModels',
+        'excludeModels',
+        'modelCapabilities',
+        'formatModelNames',
+      ].some((key) => key in ctx.options)
     ) {
       const id =
         typeof ctx.options.providerId === 'string'
@@ -541,6 +562,7 @@ export const LiteLLMPlugin = Plugin.define({
         Object.keys(customHeaders).length > 0 ? customHeaders : undefined
       const filters = readModelFilters(settings)
       const capabilities = parseModelCapabilities(settings.modelCapabilities)
+      const formatModelNames = readFormatModelNames(settings)
       const baseURL = configuredBase
         ? normalizeBaseURL(configuredBase)
         : await autoDetectLiteLLM(apiKey, discoveryHeaders)
@@ -553,7 +575,9 @@ export const LiteLLMPlugin = Plugin.define({
         continue
       }
 
-      const cacheKey = buildCacheKey(providerId, baseURL, filters, capabilities)
+      const cacheKey = buildCacheKey(providerId, baseURL, filters, capabilities, {
+        formatModelNames,
+      })
       const cached = readModelCache(cacheKey) as Record<string, Model.Info> | null
       let models = cached && Object.keys(cached).length > 0 ? cached : null
 
@@ -571,6 +595,7 @@ export const LiteLLMPlugin = Plugin.define({
             providerId,
             filters,
             capabilities,
+            formatModelNames,
           ),
           DISCOVERY_TIMEOUT_MS,
         )
@@ -586,6 +611,7 @@ export const LiteLLMPlugin = Plugin.define({
         customHeaders: discoveryHeaders,
         filters,
         capabilities,
+        formatModelNames,
         providerId,
         name:
           typeof settings.name === 'string'

@@ -120,6 +120,37 @@ describe('buildCacheKey', () => {
     expect(visionOn.startsWith(base)).toBe(true)
   })
 
+  it('keeps the plain key when formatModelNames is left at its default (true)', () => {
+    expect(
+      buildCacheKey('litellm', 'http://localhost:4000', {}, {}, { formatModelNames: true }),
+    ).toBe(KEY)
+    expect(buildCacheKey('litellm', 'http://localhost:4000', {}, {}, {})).toBe(KEY)
+  })
+
+  it('changes the key when formatModelNames is turned off', () => {
+    // Display names are baked into cached entries, so flipping the
+    // option must not serve the previously formatted (or raw) names.
+    const plain = buildCacheKey('litellm', 'http://localhost:4000', {}, {})
+    const raw = buildCacheKey('litellm', 'http://localhost:4000', {}, {}, { formatModelNames: false })
+    expect(raw).not.toBe(plain)
+    expect(raw.startsWith(KEY)).toBe(true)
+    // ...and is orthogonal to the other adjustments.
+    const rawWithFilters = buildCacheKey(
+      'litellm',
+      'http://localhost:4000',
+      { includeModels: ['prod/*'] },
+      {},
+      { formatModelNames: false },
+    )
+    const formattedWithFilters = buildCacheKey(
+      'litellm',
+      'http://localhost:4000',
+      { includeModels: ['prod/*'] },
+      {},
+    )
+    expect(rawWithFilters).not.toBe(formattedWithFilters)
+  })
+
   it('changes the key when includeModels/excludeModels are added', () => {
     const plain = buildCacheKey('litellm', 'http://localhost:4000', {}, {})
     const withFilters = buildCacheKey(
