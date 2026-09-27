@@ -1,3 +1,10 @@
+# [2.1.0](https://github.com/cardin/opencode-litellm/compare/v2.0.0...v2.1.0) (2026-09-27)
+
+
+### Features
+
+* add `formatModelNames` option to keep raw model ids in the picker ([#30](https://github.com/cardin/opencode-litellm/issues/30)) ([303e035](https://github.com/cardin/opencode-litellm/commit/303e035fa0e37489b9ee92d9e29ab4b45066b11a))
+
 # [2.0.0](https://github.com/cardin/opencode-litellm/compare/v1.2.0...v2.0.0) (2026-09-20)
 
 ### Breaking Changes
