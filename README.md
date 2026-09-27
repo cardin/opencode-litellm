@@ -4,9 +4,9 @@
 
 <img src="https://raw.githubusercontent.com/cardin/opencode-litellm/main/assets/logo.svg" alt="opencode-litellm logo" width="128" height="128" />
 
-# opencode-litellm
+# opencode-litellm (OpenCode v2 fork)
 
-**Drop-in [LiteLLM](https://github.com/BerriAI/litellm) provider for [OpenCode](https://opencode.ai) with zero configuration.**
+**Fork of [`yuseferi/opencode-litellm`](https://github.com/yuseferi/opencode-litellm), updated for OpenCode v2's provider API — a drop-in [LiteLLM](https://github.com/BerriAI/litellm) provider for [OpenCode](https://opencode.ai) with zero configuration.**
 
 [![Works with OpenCode](https://img.shields.io/badge/works%20with-OpenCode-7C5CFF?style=flat-square)](https://opencode.ai)
 [![Powered by LiteLLM](https://img.shields.io/badge/powered%20by-LiteLLM-22D3EE?style=flat-square)](https://github.com/BerriAI/litellm)
@@ -27,7 +27,14 @@ Auto-detect a running LiteLLM proxy, pull every model from `/v1/models`, and reg
 
 </div>
 
-> **npm package:** `@cardinal4/opencode-plugin-litellm` &nbsp;·&nbsp; **GitHub repo:** `cardin/opencode-litellm`
+> **npm package:** `@cardinal4/opencode-plugin-litellm` &nbsp;·&nbsp; **GitHub repo:** `cardin/opencode-litellm` &nbsp;·&nbsp; **fork of:** [`yuseferi/opencode-litellm`](https://github.com/yuseferi/opencode-litellm)
+
+> [!IMPORTANT]
+> **This repository is a fork of [`yuseferi/opencode-litellm`](https://github.com/yuseferi/opencode-litellm), maintained by [@cardin](https://github.com/cardin) specifically to support [OpenCode v2](https://opencode.ai).**
+>
+> It exists for one reason: OpenCode v2's plugin and provider-transform API. The upstream project targets OpenCode v1.x, so **use this fork if and only if you are running OpenCode 2.x**. On OpenCode 1.x, use the [upstream project](https://github.com/yuseferi/opencode-litellm) instead.
+>
+> All credit for the original plugin goes to [@yuseferi](https://github.com/yuseferi). This fork is not affiliated with or endorsed by the upstream author.
 
 ---
 
