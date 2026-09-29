@@ -499,6 +499,96 @@ describe('OpenCode 2 plugin entrypoint', () => {
     await cleanup?.()
   })
 
+  it('replaces an env/option fallback when the configured provider appears later', async () => {
+    cacheDirectory = mkdtempSync(join(tmpdir(), 'opencode-litellm-fallback-replace-test-'))
+    process.env.XDG_CACHE_HOME = cacheDirectory
+    process.env.LITELLM_BASE_URL = 'http://127.0.0.1:44448/v1'
+
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/v1/model/info')) {
+        return new Response(JSON.stringify({ data: [] }), { status: 200 })
+      }
+      return new Response(
+        JSON.stringify({ data: [{ id: 'model-from-config', object: 'model' }] }),
+        { status: 200 },
+      )
+    })
+
+    // The host registers the real provider only after setup, exactly like the
+    // late-registration ordering this PR fixes.
+    let providerListCalls = 0
+    const configuredProvider = {
+      id: 'litellm',
+      name: 'Configured LiteLLM',
+      activation: 'enabled',
+      package: '@opencode/ai/providers/openai-compatible',
+      settings: { baseURL: 'http://127.0.0.1:44449/v1' },
+      headers: {},
+    }
+    const providerList = vi.fn(async () => {
+      providerListCalls += 1
+      return { data: providerListCalls === 1 ? [] : [configuredProvider] }
+    })
+
+    const registered: Array<{ info: Record<string, unknown>; models: Array<Record<string, unknown>> }> = []
+    let providerTransform: ((editor: unknown) => void) | undefined
+    const editor = {
+      list: () => [],
+      get: () => undefined,
+      add: (entry: { info: Record<string, unknown>; models: Array<Record<string, unknown>> }) => {
+        registered.push(entry)
+      },
+      update: vi.fn(),
+      remove: vi.fn(),
+      models: { set: vi.fn(), update: vi.fn(), remove: vi.fn() },
+    }
+    const reload = vi.fn(async () => {
+      providerTransform?.(editor)
+    })
+
+    let releaseEvents!: () => void
+    const eventsGate = new Promise<void>((resolve) => {
+      releaseEvents = resolve
+    })
+    const context = {
+      app: { name: 'OpenCode', version: '2.0.19', channel: 'stable' },
+      options: {},
+      provider: {
+        list: providerList,
+        transform: vi.fn(async (transform: (editor: unknown) => void) => {
+          providerTransform = transform
+          transform(editor)
+          return { dispose: vi.fn(async () => {}) }
+        }),
+        reload,
+      },
+      event: {
+        subscribe: () =>
+          (async function* () {
+            await eventsGate
+            yield { type: 'provider.updated' }
+          })(),
+      },
+    } as unknown as Context
+
+    const cleanup = await plugin.setup(context)
+    // The env fallback won the initial setup (id 'litellm') and used its URL.
+    expect(registered).toHaveLength(1)
+    expect(registered[0].info.settings).toMatchObject({
+      baseURL: 'http://127.0.0.1:44448/v1',
+    })
+
+    releaseEvents()
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce())
+
+    // The configured provider must supersede the fallback, not be skipped
+    // because id 'litellm' was already known.
+    const lastSettings = registered[registered.length - 1].info.settings as Record<string, unknown>
+    expect(lastSettings.baseURL).toBe('http://127.0.0.1:44449/v1')
+    await cleanup?.()
+  })
+
   it('retries discovery and provider reload after a failed registry reload', async () => {
     cacheDirectory = mkdtempSync(join(tmpdir(), 'opencode-litellm-retry-test-'))
     process.env.XDG_CACHE_HOME = cacheDirectory
