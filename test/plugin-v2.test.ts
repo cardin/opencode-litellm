@@ -386,6 +386,119 @@ describe('OpenCode 2 plugin entrypoint', () => {
     await cleanup?.()
   })
 
+  it('registers providers that only appear after setup (provider.updated)', async () => {
+    cacheDirectory = mkdtempSync(join(tmpdir(), 'opencode-litellm-late-provider-test-'))
+    process.env.XDG_CACHE_HOME = cacheDirectory
+
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.startsWith('http://127.0.0.1:44445')) {
+        if (url.endsWith('/v1/model/info')) {
+          return new Response(JSON.stringify({ data: [] }), { status: 200 })
+        }
+        return new Response(
+          JSON.stringify({ data: [{ id: 'anthropic/claude-3-5-sonnet', object: 'model' }] }),
+          { status: 200 },
+        )
+      }
+      // Nothing is listening on the auto-detection ports in this scenario, so
+      // the setup-time fallback cannot rescue an unseen provider.
+      return new Response('not found', { status: 503 })
+    })
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>
+
+    // Real OpenCode 2.0.x ordering: the provider is absent during plugin setup
+    // and only becomes visible afterwards.
+    let providerListCalls = 0
+    const configuredProvider = {
+      id: 'litellm',
+      name: 'LiteLLM (proxy)',
+      activation: 'enabled',
+      package: '@opencode/ai/providers/openai-compatible',
+      settings: { baseURL: 'http://127.0.0.1:44445/v1' },
+      headers: {},
+    }
+    const providerList = vi.fn(async () => {
+      providerListCalls += 1
+      return { data: providerListCalls === 1 ? [] : [configuredProvider] }
+    })
+
+    const registered: Array<{ info: Record<string, unknown>; models: Array<Record<string, unknown>> }> = []
+    let providerTransform: ((editor: unknown) => void) | undefined
+    const editor = {
+      list: () => [],
+      get: () => undefined,
+      add: (entry: { info: Record<string, unknown>; models: Array<Record<string, unknown>> }) => {
+        registered.push(entry)
+      },
+      update: vi.fn(),
+      remove: vi.fn(),
+      models: {
+        set: vi.fn(),
+        update: vi.fn(),
+        remove: vi.fn(),
+      },
+    }
+    const reload = vi.fn(async () => {
+      providerTransform?.(editor)
+    })
+
+    let releaseEvents!: () => void
+    const eventsGate = new Promise<void>((resolve) => {
+      releaseEvents = resolve
+    })
+    const context = {
+      app: { name: 'OpenCode', version: '2.0.19', channel: 'stable' },
+      options: {},
+      provider: {
+        list: providerList,
+        transform: vi.fn(async (transform: (editor: unknown) => void) => {
+          providerTransform = transform
+          transform(editor)
+          return { dispose: vi.fn(async () => {}) }
+        }),
+        reload,
+      },
+      event: {
+        subscribe: () =>
+          (async function* () {
+            await eventsGate
+            // A burst: the host can emit several updates back to back.
+            yield { type: 'provider.updated' }
+            yield { type: 'provider.updated' }
+          })(),
+      },
+    } as unknown as Context
+
+    const cleanup = await plugin.setup(context)
+    // The provider was invisible at setup and nothing could be registered.
+    expect(registered).toHaveLength(0)
+
+    releaseEvents()
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce())
+    expect(registered).toHaveLength(1)
+    expect(registered[0].info).toMatchObject({ id: 'litellm', activation: 'enabled' })
+    expect(registered[0].info.settings).toMatchObject({
+      baseURL: 'http://127.0.0.1:44445/v1',
+    })
+    expect(registered[0].models.map((model) => model.id)).toEqual([
+      'anthropic/claude-3-5-sonnet',
+    ])
+
+    // The second trigger must not re-discover or re-publish the same provider.
+    // By the time the provider list has been read three times (setup plus one
+    // pass per trigger) both passes have settled.
+    await vi.waitFor(() => expect(providerList).toHaveBeenCalledTimes(3))
+    expect(reload).toHaveBeenCalledTimes(1)
+    // One health check plus the parallel models/model-info pair.
+    const discoveryCalls = fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.startsWith('http://127.0.0.1:44445'))
+    expect(discoveryCalls).toHaveLength(3)
+    expect(registered).toHaveLength(1)
+    await cleanup?.()
+  })
+
   it('retries discovery and provider reload after a failed registry reload', async () => {
     cacheDirectory = mkdtempSync(join(tmpdir(), 'opencode-litellm-retry-test-'))
     process.env.XDG_CACHE_HOME = cacheDirectory
