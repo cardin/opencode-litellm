@@ -408,7 +408,7 @@ sequenceDiagram
     Plugin->>OC: provider.reload() when models changed
 ```
 
-1. On OpenCode 2 startup the plugin's `setup` registers a provider transform. OpenCode 1 uses the legacy `config` hook.
+1. On OpenCode 2 startup the plugin's `setup` registers a provider transform. OpenCode 1 uses the legacy `config` hook. Because OpenCode 2 registers user-configured providers just after plugin setup, the plugin re-reads them on `provider.updated` (and on `session.created`) and publishes any it discovers through a registry reload.
 2. If `providers.litellm` exists, its `settings.baseURL` is used. Otherwise common ports are probed — that probe is the only health check (3 s fail-fast per port).
 3. With a configured `baseURL` the proxy is not contacted during startup unless the cache is cold; the discovery fetch itself fails fast if the proxy is unreachable.
 4. **Fast path:** if a fresh on-disk cache exists (≤ 7 days old), its models are registered synchronously — startup does not wait on network discovery.

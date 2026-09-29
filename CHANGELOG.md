@@ -14,6 +14,11 @@
 
 ### Bug Fixes
 
+* pick up LiteLLM providers that OpenCode registers *after* plugin setup: the
+  V2 plugin now reconciles on `provider.updated` and on `session.created`, so
+  the documented `providers.litellm.settings.baseURL` (and `providers.litellm-*`
+  variants) actually registers models on OpenCode 2.0.x instead of silently
+  falling back to auto-detection on localhost:4000/8000/8080
 * register models without modality metadata as text-only to avoid image requests to text-only routes
 
 # [2.1.0](https://github.com/cardin/opencode-litellm/compare/v2.0.0...v2.1.0) (2026-09-27)
