@@ -589,6 +589,114 @@ describe('OpenCode 2 plugin entrypoint', () => {
     await cleanup?.()
   })
 
+  it('retries publishing a newly configured provider after a failed reload', async () => {
+    cacheDirectory = mkdtempSync(join(tmpdir(), 'opencode-litellm-late-provider-retry-test-'))
+    process.env.XDG_CACHE_HOME = cacheDirectory
+
+    const configuredBaseURL = 'http://127.0.0.1:44450'
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      // Only the configured host answers, so the setup-time fallback cannot
+      // succeed against an auto-detection port and mask the real scenario.
+      if (!url.startsWith(configuredBaseURL)) {
+        return new Response('not found', { status: 503 })
+      }
+      if (url.endsWith('/v1/model/info')) {
+        return new Response(JSON.stringify({ data: [] }), { status: 200 })
+      }
+      return new Response(
+        JSON.stringify({ data: [{ id: 'late-model', object: 'model' }] }),
+        { status: 200 },
+      )
+    })
+
+    // Provider is invisible during setup, then appears on provider.updated.
+    let providerListCalls = 0
+    const configuredProvider = {
+      id: 'litellm',
+      name: 'Configured LiteLLM',
+      activation: 'enabled',
+      package: '@opencode/ai/providers/openai-compatible',
+      settings: { baseURL: `${configuredBaseURL}/v1` },
+      headers: {},
+    }
+    const providerList = vi.fn(async () => {
+      providerListCalls += 1
+      return { data: providerListCalls === 1 ? [] : [configuredProvider] }
+    })
+
+    const registered: Array<{ info: Record<string, unknown>; models: Array<Record<string, unknown>> }> = []
+    let providerTransform: ((editor: unknown) => void) | undefined
+    const editor = {
+      list: () => [],
+      get: () => undefined,
+      add: (entry: { info: Record<string, unknown>; models: Array<Record<string, unknown>> }) => {
+        registered.push(entry)
+      },
+      update: vi.fn(),
+      remove: vi.fn(),
+      models: { set: vi.fn(), update: vi.fn(), remove: vi.fn() },
+    }
+    // First publication attempt fails; a later pass must retry and succeed.
+    const reload = vi.fn(async () => {
+      if (reload.mock.calls.length === 1) throw new Error('temporary registry failure')
+      providerTransform?.(editor)
+    })
+
+    let releaseFirst!: () => void
+    const firstEvent = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let releaseSecond!: () => void
+    const secondEvent = new Promise<void>((resolve) => {
+      releaseSecond = resolve
+    })
+    const context = {
+      app: { name: 'OpenCode', version: '2.0.19', channel: 'stable' },
+      options: {},
+      provider: {
+        list: providerList,
+        transform: vi.fn(async (transform: (editor: unknown) => void) => {
+          providerTransform = transform
+          transform(editor)
+          return { dispose: vi.fn(async () => {}) }
+        }),
+        reload,
+      },
+      event: {
+        subscribe: () =>
+          (async function* () {
+            await firstEvent
+            yield { type: 'provider.updated' }
+            await secondEvent
+            yield { type: 'session.created' }
+          })(),
+      },
+    } as unknown as Context
+
+    const cleanup = await plugin.setup(context)
+    // The post-subscribe reconcile runs at startup; discovery finds the
+    // provider but the first publication attempt fails, so nothing is
+    // registered and the source stays pending.
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    expect(registered).toHaveLength(0)
+
+    // A later trigger must retry publication, not skip the source as "known".
+    releaseFirst()
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(2))
+    expect(registered).toHaveLength(1)
+    expect(registered[0].info.settings).toMatchObject({
+      baseURL: 'http://127.0.0.1:44450/v1',
+    })
+    expect(registered[0].models.map((model) => model.id)).toEqual(['late-model'])
+
+    // A further trigger must not republish an already-published source.
+    releaseSecond()
+    await vi.waitFor(() => expect(providerList).toHaveBeenCalledTimes(4))
+    expect(reload).toHaveBeenCalledTimes(2)
+    await cleanup?.()
+  })
+
   it('retries discovery and provider reload after a failed registry reload', async () => {
     cacheDirectory = mkdtempSync(join(tmpdir(), 'opencode-litellm-retry-test-'))
     process.env.XDG_CACHE_HOME = cacheDirectory

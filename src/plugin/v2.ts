@@ -48,8 +48,18 @@ interface ProviderSource {
    * a host-registered provider. A fallback only stands in until the real
    * provider appears; reconcile replaces it at that point so the user's
    * `providers.<id>.settings.baseURL` wins over the guessed endpoint.
+   *
+   * Distinct from {@link pendingPublication}: a fallback source is always
+   * pending until a configured provider supersedes it, whereas a configured
+   * source is pending only until its first successful `reload()`.
    */
   fromFallback: boolean
+  /**
+   * True until this source has been published to the provider registry by a
+   * successful `reload()`. Reconciliation retries (and re-adds) any source
+   * still pending, so a transient reload failure does not strand it.
+   */
+  pendingPublication: boolean
   filters: ModelFilters
   capabilities: ModelCapabilities
   formatModelNames: boolean
@@ -293,6 +303,7 @@ async function makeProviderSource(
     credentialReloadRequired: false,
     refreshRequired: false,
     fromFallback: provider === undefined,
+    pendingPublication: true,
     baseURL,
     apiKey,
     customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
@@ -451,7 +462,8 @@ async function listMatchingProviders(context: Context): Promise<ProviderInfo[]> 
  * provider — in that case it is replaced, so merging a late provider overrides
  * the option/env/auto-detected endpoint (including its baseURL and
  * credentials). Safe to call repeatedly (startup, `provider.updated`,
- * `session.created`). Returns sources that need publishing via `reload()`.
+ * `session.created`). Returns sources that still need publishing via
+ * `reload()` (new providers plus any whose previous publication failed).
  */
 async function reconcileProviderSources(
   context: Context,
@@ -461,7 +473,9 @@ async function reconcileProviderSources(
   const changed: ProviderSource[] = []
   for (const provider of await listMatchingProviders(context)) {
     const existing = sources.get(provider.id)
-    if (existing && !existing.fromFallback) continue
+    // Skip sources that are both configured (not a fallback) and already
+    // published; a pending configured source must be returned so it is retried.
+    if (existing && !existing.fromFallback && !existing.pendingPublication) continue
     const source = await makeProviderSource(context, provider, pluginOptions)
     if (!source) continue
     sources.set(source.id, source)
@@ -535,6 +549,9 @@ const definition = Plugin.define({
           })
         }
       }
+      // The initial transform is itself the publication step for sources built
+      // during setup, so they are no longer "pending" after this point.
+      for (const source of sources.values()) source.pendingPublication = false
     })
 
     const controller = new AbortController()
@@ -548,11 +565,9 @@ const definition = Plugin.define({
     let reconcileAgain = false
 
     const reconcileOnce = async (): Promise<void> => {
-      // A newly added source is only "published" once `reload()` succeeds.
-      // Until then it must stay retryable, so we record `pending` and only
-      // clear their fallback marker after a successful reload. A transient
-      // reload failure therefore leaves the entry as a pending fallback and
-      // the next trigger (provider.updated / session.created) retries it.
+      // A newly built source is only "published" once `reload()` succeeds. Until
+      // then it stays `pendingPublication`, so the next pass returns and retries
+      // it instead of skipping it forever after a transient reload failure.
       let pending: ProviderSource[]
       try {
         pending = await reconcileProviderSources(context, pluginOptions, sources)
@@ -564,12 +579,13 @@ const definition = Plugin.define({
       if (pending.length === 0) return
       try {
         await context.provider.reload()
-        for (const source of pending) source.fromFallback = false
+        for (const source of pending) source.pendingPublication = false
         logInfo(
           `[opencode-litellm] Registered ${pending.length} newly configured LiteLLM provider(s).`,
         )
       } catch (error) {
-        // Leave the sources marked as fallback so the next event retries.
+        // Leave `pendingPublication` set so the next trigger retries instead of
+        // treating these sources as already published.
         const message = error instanceof Error ? error.message : String(error)
         logInfo(
           `[opencode-litellm] Could not reload providers after discovering a new provider; will retry: ${message}`,
