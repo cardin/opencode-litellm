@@ -10,7 +10,7 @@ export type CapabilityFlag = (typeof CAPABILITY_FLAGS)[number]
 
 /**
  * Per-model boolean capability overrides keyed by exact model id
- * (plugin `options.modelCapabilities`). Keys of the inner
+ * (`provider.litellm.options.modelCapabilities`). Keys of the inner
  * record are not restricted to `CapabilityFlag`: any boolean capability
  * key LiteLLM reports is accepted, so future flags work without a
  * plugin change.

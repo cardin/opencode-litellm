@@ -1,3 +1,21 @@
+# [Unreleased]
+
+### Features
+
+* merge upstream v1.4.0 — native OpenCode 2 `Plugin.define`/provider-transform support with event-driven refresh, alongside the OpenCode 1.18.29+ legacy `server()` entrypoint (OpenCode 1 support is restored)
+* support the OpenCode 2 API with the OpenCode 1 server entrypoint
+
+### Breaking Changes
+
+* the fork's own V2 implementation (2.0.0–2.1.0) is replaced by upstream's: the default export is now upstream's V2 definition (which also exposes a V1-compatible `server()` method), and the named `LiteLLMPlugin` export is the OpenCode 1 legacy plugin
+* plugin `options.providers` (one options block defining several providers) is no longer read; configure each provider as a `providers.litellm-*` entry with `settings` instead
+* plugin `options.headers` is no longer read; use provider `headers` (or `options.customHeaders`)
+* model caches written by 2.0.x are invalidated (cache version back to 1)
+
+### Bug Fixes
+
+* register models without modality metadata as text-only to avoid image requests to text-only routes
+
 # [2.1.0](https://github.com/cardin/opencode-litellm/compare/v2.0.0...v2.1.0) (2026-09-27)
 
 
@@ -13,6 +31,13 @@
   package now default-exports a `Plugin.define` entrypoint, registers discovered
   models through provider transforms, and reloads the live catalog after a
   background refresh. OpenCode 1 is no longer supported.
+
+# [1.4.0](https://github.com/yuseferi/opencode-litellm/compare/v1.3.0...v1.4.0) (2026-09-29)
+
+
+### Features
+
+* OpenCode 2 plugin API support ([#32](https://github.com/yuseferi/opencode-litellm/issues/32)) ([6215ca7](https://github.com/yuseferi/opencode-litellm/commit/6215ca7bb6652916cbece81953d500ee2bbf7e43))
 
 # [1.3.0](https://github.com/yuseferi/opencode-litellm/compare/v1.2.0...v1.3.0) (2026-09-23)
 
