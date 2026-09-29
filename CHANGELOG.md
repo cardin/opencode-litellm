@@ -1,37 +1,22 @@
 # [2.2.0](https://github.com/cardin/opencode-litellm/compare/v2.1.0...v2.2.0) (2026-09-29)
 
-
-### Bug Fixes
-
-* discover LiteLLM providers registered after plugin setup ([ecb9af1](https://github.com/cardin/opencode-litellm/commit/ecb9af1ee687b164d55032eab0e71c0bc0cf0759))
-
+Merges upstream [v1.4.0](https://github.com/yuseferi/opencode-litellm/releases/tag/v1.4.0): the fork's own V2 implementation (2.0.0–2.1.0) is replaced by upstream's, and OpenCode 1 support is restored.
 
 ### Features
 
-* OpenCode 2 plugin API support ([#32](https://github.com/cardin/opencode-litellm/issues/32)) ([6215ca7](https://github.com/cardin/opencode-litellm/commit/6215ca7bb6652916cbece81953d500ee2bbf7e43))
-
-# [Unreleased]
-
-### Features
-
-* merge upstream v1.4.0 — native OpenCode 2 `Plugin.define`/provider-transform support with event-driven refresh, alongside the OpenCode 1.18.29+ legacy `server()` entrypoint (OpenCode 1 support is restored)
-* support the OpenCode 2 API with the OpenCode 1 server entrypoint
-
-### Breaking Changes
-
-* the fork's own V2 implementation (2.0.0–2.1.0) is replaced by upstream's: the default export is now upstream's V2 definition (which also exposes a V1-compatible `server()` method), and the named `LiteLLMPlugin` export is the OpenCode 1 legacy plugin
-* plugin `options.providers` (one options block defining several providers) is no longer read; configure each provider as a `providers.litellm-*` entry with `settings` instead
-* plugin `options.headers` is no longer read; use provider `headers` (or `options.customHeaders`)
-* model caches written by 2.0.x are invalidated (cache version back to 1)
+* OpenCode 2 plugin API support ([#32](https://github.com/cardin/opencode-litellm/issues/32)) ([6215ca7](https://github.com/cardin/opencode-litellm/commit/6215ca7bb6652916cbece81953d500ee2bbf7e43)) — native `Plugin.define`, provider-transform registration and event-driven refresh, plus the OpenCode 1.18.29+ legacy `server()` entrypoint
 
 ### Bug Fixes
 
-* pick up LiteLLM providers that OpenCode registers *after* plugin setup: the
-  V2 plugin now reconciles on `provider.updated` and on `session.created`, so
-  the documented `providers.litellm.settings.baseURL` (and `providers.litellm-*`
-  variants) actually registers models on OpenCode 2.0.x instead of silently
-  falling back to auto-detection on localhost:4000/8000/8080
+* discover LiteLLM providers registered after plugin setup ([ecb9af1](https://github.com/cardin/opencode-litellm/commit/ecb9af1ee687b164d55032eab0e71c0bc0cf0759)) — OpenCode 2 registers user-configured providers *after* the plugin runs, so the documented `providers.litellm.settings.baseURL` config used to be ignored; the plugin now reconciles on `provider.updated` and `session.created`
 * register models without modality metadata as text-only to avoid image requests to text-only routes
+
+### ⚠️ Migration notes for fork users upgrading from 2.0.x / 2.1.x
+
+* The default export is now upstream's V2 definition (it also exposes a V1-compatible `server()`); the named `LiteLLMPlugin` export is the OpenCode 1 legacy plugin
+* Plugin `options.providers` (one options block defining several providers) is no longer read — configure each provider as a `providers.litellm-*` entry with `settings` instead
+* Plugin `options.headers` is no longer read — use provider `headers` (or `options.customHeaders`)
+* Model caches written by 2.0.x are invalidated (cache version back to 1)
 
 # [2.1.0](https://github.com/cardin/opencode-litellm/compare/v2.0.0...v2.1.0) (2026-09-27)
 
