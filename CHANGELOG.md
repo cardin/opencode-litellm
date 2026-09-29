@@ -1,3 +1,15 @@
+# [2.2.0](https://github.com/cardin/opencode-litellm/compare/v2.1.0...v2.2.0) (2026-09-29)
+
+
+### Bug Fixes
+
+* discover LiteLLM providers registered after plugin setup ([ecb9af1](https://github.com/cardin/opencode-litellm/commit/ecb9af1ee687b164d55032eab0e71c0bc0cf0759))
+
+
+### Features
+
+* OpenCode 2 plugin API support ([#32](https://github.com/cardin/opencode-litellm/issues/32)) ([6215ca7](https://github.com/cardin/opencode-litellm/commit/6215ca7bb6652916cbece81953d500ee2bbf7e43))
+
 # [Unreleased]
 
 ### Features
