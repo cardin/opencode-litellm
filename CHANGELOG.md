@@ -1,3 +1,10 @@
+## [2.2.1](https://github.com/cardin/opencode-litellm/compare/v2.2.0...v2.2.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* warn on load that this package is deprecated in favor of upstream opencode-plugin-litellm ([8809434](https://github.com/cardin/opencode-litellm/commit/88094341c8bba1cbe008a49aedd9211acb55b0e4))
+
 # [2.2.0](https://github.com/cardin/opencode-litellm/compare/v2.1.0...v2.2.0) (2026-09-29)
 
 Merges upstream [v1.4.0](https://github.com/yuseferi/opencode-litellm/releases/tag/v1.4.0): the fork's own V2 implementation (2.0.0–2.1.0) is replaced by upstream's, and OpenCode 1 support is restored.
