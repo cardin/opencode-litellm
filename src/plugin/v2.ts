@@ -1,6 +1,7 @@
 import { Model, Plugin, Provider } from '@opencode/plugin'
 import type { Context } from '@opencode/plugin/promise/plugin'
 import type { PluginInput } from '@opencode-ai/plugin'
+import { logDeprecation } from '../utils/deprecation'
 import {
   DISCOVERY_TIMEOUT_MS,
   discoverModels,
@@ -461,6 +462,7 @@ async function reconcileProviderSources(
 const definition = Plugin.define({
   id: 'opencode-litellm',
   async setup(context) {
+    logDeprecation()
     initV2Logging()
 
     const pluginOptions = asRecord(context.options)

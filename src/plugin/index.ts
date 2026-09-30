@@ -23,6 +23,7 @@ import { passesModelFilter } from '../utils/model-filter'
 import type { ModelFilters } from '../utils/model-filter'
 import { applyCapabilityOverrides, parseModelCapabilities } from '../utils/model-capabilities'
 import type { ModelCapabilities } from '../utils/model-capabilities'
+import { logDeprecation } from '../utils/deprecation'
 
 const CHAT_PROVIDER_ID = 'litellm'
 // Covers the 3 s health check plus the parallel models/model-info fetch
@@ -524,6 +525,7 @@ async function backgroundRefresh(cacheKey: string): Promise<void> {
  * }
  */
 export const LiteLLMPlugin: Plugin = async (input: PluginInput) => {
+  logDeprecation()
   initLogging(input.client)
   return {
     config: async (config: any) => {

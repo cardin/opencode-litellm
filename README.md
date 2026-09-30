@@ -4,7 +4,7 @@
 
 <img src="https://raw.githubusercontent.com/cardin/opencode-litellm/main/assets/logo.svg" alt="opencode-litellm logo" width="128" height="128" />
 
-# opencode-litellm (OpenCode 1 + 2 fork)
+# opencode-litellm (OpenCode 1 + 2 fork) — DEPRECATED
 
 **[OpenCode V1 + V2](https://opencode.ai) + [LiteLLM](https://github.com/BerriAI/litellm) provider with zero configuration.**
 
@@ -28,17 +28,31 @@ Auto-detect a running LiteLLM proxy, pull every model from `/v1/models`, and reg
 
 </div>
 
-> **npm package:** `@cardinal4/opencode-plugin-litellm` &nbsp;·&nbsp; **GitHub repo:** `cardin/opencode-litellm` &nbsp;·&nbsp; **fork of:** [`yuseferi/opencode-litellm`](https://github.com/yuseferi/opencode-litellm)
+> [!WARNING]
+> **This package is deprecated and will no longer be maintained.**
+>
+> The upstream project, [`yuseferi/opencode-litellm`](https://github.com/yuseferi/opencode-litellm),
+> has successfully implemented OpenCode **V2** support, so this fork's reason to exist has ended.
+>
+> **Migrate:** replace `@cardinal4/opencode-plugin-litellm` with the upstream package
+> [`opencode-plugin-litellm`](https://www.npmjs.com/package/opencode-plugin-litellm) (v1.4.1+)
+> in your `opencode.json` `plugins` array. No other config changes are required.
+>
+> `npm install` of this package prints a deprecation warning pointing to the upstream package,
+> and OpenCode shows a notice when this plugin loads. The repository has been archived.
+
+> **npm package:** `@cardinal4/opencode-plugin-litellm` *(deprecated)* &nbsp;·&nbsp; **GitHub repo:** `cardin/opencode-litellm` *(archived)* &nbsp;·&nbsp; **fork of:** [`yuseferi/opencode-litellm`](https://github.com/yuseferi/opencode-litellm)
 
 > [!IMPORTANT]
 > **This repository is a fork of [`yuseferi/opencode-litellm`](https://github.com/yuseferi/opencode-litellm), maintained by [@cardin](https://github.com/cardin).**
 >
-> It tracks upstream releases and republishes them under the scoped npm name `@cardinal4/opencode-plugin-litellm`. All credit for the original plugin goes to [@yuseferi](https://github.com/yuseferi); this fork is not affiliated with or endorsed by the upstream author. Prefer the [upstream package](https://www.npmjs.com/package/opencode-plugin-litellm) unless you specifically need the scoped build.
+> It tracks upstream releases and republishes them under the scoped npm name `@cardinal4/opencode-plugin-litellm`. All credit for the original plugin goes to [@yuseferi](https://github.com/yuseferi); this fork is not affiliated with or endorsed by the upstream author. Upstream now ships OpenCode V2 support natively — use the [upstream package](https://www.npmjs.com/package/opencode-plugin-litellm) instead.
 
 > **✅ OpenCode V1 + V2 support:** OpenCode **2.0.19** uses native
 > `Plugin.define`, provider-registry model discovery, and in-process refresh.
 > OpenCode **1.18.29+** uses the legacy `server()` entrypoint. Both versions
-> are supported by this package.
+> are supported by this package — and, as of upstream v1.4.1, by
+> [`opencode-plugin-litellm`](https://www.npmjs.com/package/opencode-plugin-litellm) directly.
 
 ---
 
@@ -49,6 +63,10 @@ Maintaining a `models` block in `opencode.json` for every model your LiteLLM pro
 `opencode-litellm` removes that loop entirely. It queries your LiteLLM proxy during plugin setup and registers discovered models with OpenCode's provider registry. New models are refreshed in-process through the V2 provider API, while V1 keeps its config-hook behavior.
 
 ## 🚀 Quickstart
+
+> [!NOTE]
+> Deprecated — new users should follow the [upstream quickstart](https://github.com/yuseferi/opencode-litellm#-quickstart)
+> with `opencode-plugin-litellm`. The steps below apply only if you are already on this fork.
 
 Install the plugin from the CLI, configure the shared background service with
 your proxy URL and key, then restart OpenCode. If your OpenCode 2 executable
